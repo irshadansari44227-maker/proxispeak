@@ -21,36 +21,34 @@ const io = new Server(server, {
   },
 });
 
-// Har connected browser ki position store hogi
-const positions = new Map();
-
-// Nearby distance in percentage-based office coordinates
+// Har connected browser ki identity aur position
+const users = new Map();
 const PROXIMITY_DISTANCE = 18;
 
 app.get('/', (req, res) => {
   res.send('ProxiSpeak backend is running!');
 });
 
-// Connected users ki positions aur nearby pairs broadcast karo
 function broadcastPositions() {
-  const allPositions = Array.from(positions.values());
+  const allPositions = Array.from(users.values());
+
   io.emit('all-positions', allPositions);
 
   const nearbyPairs = [];
 
   for (let i = 0; i < allPositions.length; i++) {
     for (let j = i + 1; j < allPositions.length; j++) {
-      const userA = allPositions[i];
-      const userB = allPositions[j];
+      const a = allPositions[i];
+      const b = allPositions[j];
 
-      const dx = userA.x - userB.x;
-      const dy = userA.y - userB.y;
+      const dx = a.x - b.x;
+      const dy = a.y - b.y;
       const distance = Math.sqrt(dx * dx + dy * dy);
 
       if (distance <= PROXIMITY_DISTANCE) {
         nearbyPairs.push({
-          userA: userA.id,
-          userB: userB.id,
+          userA: a.id,
+          userB: b.id,
           distance: Number(distance.toFixed(2)),
         });
       }
@@ -60,17 +58,40 @@ function broadcastPositions() {
   io.emit('nearby-users', nearbyPairs);
 }
 
-io.on('connection', (socket) => {
+io.on('connection', socket => {
   console.log('Connected:', socket.id);
 
-  // Naye browser ko existing positions bhejo
-  socket.emit('all-positions', Array.from(positions.values()));
+  socket.emit('all-positions', Array.from(users.values()));
 
-  socket.on('avatar-move', (data) => {
+  socket.on('register-user', data => {
+    const name =
+      typeof data?.name === 'string'
+        ? data.name.trim().slice(0, 50)
+        : '';
+
+    if (!name) return;
+
+    const existing = users.get(socket.id);
+
+    users.set(socket.id, {
+      id: socket.id,
+      name,
+      x: existing?.x ?? 50,
+      y: existing?.y ?? 50,
+    });
+
+    console.log('Registered:', name, socket.id);
+    broadcastPositions();
+  });
+
+  socket.on('avatar-move', data => {
+    const existing = users.get(socket.id);
+
+    if (!existing) return;
+
     const x = Number(data?.x);
     const y = Number(data?.y);
 
-    // Invalid positions reject karo
     if (
       !Number.isFinite(x) ||
       !Number.isFinite(y) ||
@@ -80,23 +101,26 @@ io.on('connection', (socket) => {
       return;
     }
 
-    positions.set(socket.id, {
-      id: socket.id,
+    users.set(socket.id, {
+      ...existing,
       x,
       y,
     });
 
-    console.log('Avatar moved:', socket.id, { x, y });
-
+    console.log('Avatar moved:', existing.name, { x, y });
     broadcastPositions();
   });
 
   socket.on('disconnect', () => {
-    positions.delete(socket.id);
+    const user = users.get(socket.id);
 
-    console.log('Disconnected:', socket.id);
+    if (user) {
+      console.log('Disconnected:', user.name);
+    } else {
+      console.log('Disconnected:', socket.id);
+    }
 
-    // Disconnected browser ko hata kar fresh data bhejo
+    users.delete(socket.id);
     broadcastPositions();
   });
 });

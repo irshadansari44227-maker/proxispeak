@@ -4,7 +4,6 @@ import { io } from 'socket.io-client'
 import './App.css'
 
 const socket = io('http://localhost:5000')
-
 const PROXIMITY_DISTANCE = 18
 
 const initialMembers = [
@@ -20,6 +19,10 @@ function getDistance(a, b) {
   return Math.sqrt(dx * dx + dy * dy)
 }
 
+function displayName(name) {
+  return name === 'You' ? 'Irshad Ansari' : name
+}
+
 function App() {
   const [members, setMembers] = useState(initialMembers)
   const [remotePositions, setRemotePositions] = useState([])
@@ -28,9 +31,21 @@ function App() {
   const [micOn, setMicOn] = useState(false)
   const [connected, setConnected] = useState(socket.connected)
 
+  const selectedMember = members.find(member => member.id === selected)
+
   useEffect(() => {
+    function registerCurrentUser() {
+      const member = initialMembers.find(item => item.id === selected)
+      if (!member) return
+
+      socket.emit('register-user', {
+        name: displayName(member.name),
+      })
+    }
+
     function onConnect() {
       setConnected(true)
+      registerCurrentUser()
     }
 
     function onDisconnect() {
@@ -54,15 +69,17 @@ function App() {
     socket.on('all-positions', onPositions)
     socket.on('nearby-users', onNearbyUsers)
 
+    if (socket.connected) {
+      registerCurrentUser()
+    }
+
     return () => {
       socket.off('connect', onConnect)
       socket.off('disconnect', onDisconnect)
       socket.off('all-positions', onPositions)
       socket.off('nearby-users', onNearbyUsers)
     }
-  }, [])
-
-  const selectedMember = members.find(member => member.id === selected)
+  }, [selected])
 
   const nearbyMembers = selectedMember
     ? members.filter(member =>
@@ -71,18 +88,10 @@ function App() {
       )
     : []
 
-  const myRemotePosition = remotePositions.find(
-    position => position.id === socket.id
-  )
-
-  // Server ke nearby pairs mein apne browser ka ID check karo.
-  // Is browser ke apne record ko server se filter kiya gaya hai,
-  // isliye filhaal remote pair status connected guests ke liye hai.
-  const nearbyGuests = nearbyPairs.filter(pair =>
-    remotePositions.some(
-      position =>
-        (pair.userA === position.id && pair.userB === socket.id) ||
-        (pair.userB === position.id && pair.userA === socket.id)
+  const nearbyGuests = remotePositions.filter(position =>
+    nearbyPairs.some(pair =>
+      (pair.userA === position.id && pair.userB === socket.id) ||
+      (pair.userB === position.id && pair.userA === socket.id)
     )
   )
 
@@ -217,39 +226,33 @@ function App() {
               )
             })}
 
-            {remotePositions.map((position, index) => {
-              const isNearby = nearbyPairs.some(pair =>
-                (pair.userA === position.id && pair.userB === socket.id) ||
-                (pair.userB === position.id && pair.userA === socket.id)
-              )
-
-              return (
-                <div
-                  key={position.id}
-                  className="avatar"
-                  style={{
-                    left: `${position.x}%`,
-                    top: `${position.y}%`,
-                    '--avatar-color': '#e11d48',
-                    outline: isNearby ? '3px solid #16a085' : undefined,
-                    outlineOffset: isNearby ? '3px' : undefined,
-                    pointerEvents: 'none',
-                  }}
-                >
-                  <span>G</span>
-                  <small>{`Guest ${index + 1}${isNearby ? ' · Nearby' : ''}`}</small>
-                </div>
-              )
-            })}
+            {remotePositions.map(position => (
+              <div
+                key={position.id}
+                className="avatar"
+                style={{
+                  left: `${position.x}%`,
+                  top: `${position.y}%`,
+                  '--avatar-color': '#e11d48',
+                  outline: nearbyPairs.some(pair =>
+                    (pair.userA === position.id && pair.userB === socket.id) ||
+                    (pair.userB === position.id && pair.userA === socket.id)
+                  ) ? '3px solid #16a085' : undefined,
+                  outlineOffset: '3px',
+                  pointerEvents: 'none',
+                }}
+              >
+                <span>{(position.name || 'Guest')[0]}</span>
+                <small>{position.name || 'Guest'}</small>
+              </div>
+            ))}
 
             <span className="plant plant-one">🪴</span>
             <span className="plant plant-two">🌿</span>
           </div>
 
           <div className="tip">
-            <strong>
-              🟢 {nearbyMembers.length} demo teammate(s) nearby
-            </strong>
+            <strong>🟢 {nearbyMembers.length} demo teammate(s) nearby</strong>
             <p>
               {nearbyMembers.length
                 ? nearbyMembers.map(member => member.name).join(', ')
@@ -258,19 +261,17 @@ function App() {
           </div>
 
           <div className="tip">
-            <strong>
-              🌐 {nearbyGuests.length} remote guest connection(s) nearby
-            </strong>
+            <strong>🌐 {nearbyGuests.length} remote user(s) nearby</strong>
             <p>
               {nearbyGuests.length
-                ? 'The server reports at least one nearby remote browser.'
-                : 'Open the app in another browser or Incognito window, move an avatar there, and bring the positions close.'}
+                ? nearbyGuests.map(user => user.name || 'Guest').join(', ')
+                : 'Open another browser, then move the connected users close together.'}
             </p>
           </div>
 
           <p className="help-text">
             Selected: {selectedMember?.name}. Click a teammate to select them,
-            then click an empty office space to move them.
+            then click an empty office space to move their avatar.
           </p>
 
           <p className="mic-status">
@@ -279,7 +280,7 @@ function App() {
 
           <p className="mic-status">
             Microphone: {micOn
-              ? 'Interface enabled — audio calling is not implemented yet'
+              ? 'Interface enabled — actual audio calling is not implemented yet'
               : 'Off'}
           </p>
         </section>
