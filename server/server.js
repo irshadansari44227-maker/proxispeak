@@ -5,7 +5,6 @@ const cors = require('cors');
 const { Server } = require('socket.io');
 
 const app = express();
-
 app.use(cors());
 app.use(express.json());
 
@@ -21,7 +20,7 @@ const io = new Server(server, {
   },
 });
 
-// Har connected browser ki identity aur position
+// Connected browser users and their positions
 const users = new Map();
 const PROXIMITY_DISTANCE = 18;
 
@@ -29,6 +28,7 @@ app.get('/', (req, res) => {
   res.send('ProxiSpeak backend is running!');
 });
 
+// Broadcast positions and calculate nearby users
 function broadcastPositions() {
   const allPositions = Array.from(users.values());
 
@@ -63,6 +63,7 @@ io.on('connection', socket => {
 
   socket.emit('all-positions', Array.from(users.values()));
 
+  // Register browser identity
   socket.on('register-user', data => {
     const name =
       typeof data?.name === 'string'
@@ -84,9 +85,9 @@ io.on('connection', socket => {
     broadcastPositions();
   });
 
+  // Update the current user's position
   socket.on('avatar-move', data => {
     const existing = users.get(socket.id);
-
     if (!existing) return;
 
     const x = Number(data?.x);
@@ -107,18 +108,39 @@ io.on('connection', socket => {
       y,
     });
 
-    console.log('Avatar moved:', existing.name, { x, y });
     broadcastPositions();
   });
 
+  // Forward WebRTC signaling messages to the target browser
+  const signalingEvents = [
+    'webrtc-offer',
+    'webrtc-answer',
+    'webrtc-ice-candidate',
+  ];
+
+  signalingEvents.forEach(eventName => {
+    socket.on(eventName, data => {
+      if (!data || typeof data.target !== 'string') return;
+      if (data.target === socket.id) return;
+
+      const targetSocket = io.sockets.sockets.get(data.target);
+      if (!targetSocket) return;
+
+      const payload = { ...data, from: socket.id };
+      delete payload.target;
+
+      targetSocket.emit(eventName, payload);
+    });
+  });
+
+  // Remove disconnected browser
   socket.on('disconnect', () => {
     const user = users.get(socket.id);
 
-    if (user) {
-      console.log('Disconnected:', user.name);
-    } else {
-      console.log('Disconnected:', socket.id);
-    }
+    console.log(
+      'Disconnected:',
+      user?.name || socket.id
+    );
 
     users.delete(socket.id);
     broadcastPositions();
