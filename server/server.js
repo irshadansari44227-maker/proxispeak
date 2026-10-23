@@ -20,30 +20,28 @@ const io = new Server(server, {
   },
 });
 
-// Connected browser users and their positions
 const users = new Map();
-const PROXIMITY_DISTANCE = 18;
+const PROXIMITY_DISTANCE = 32;
 
 app.get('/', (req, res) => {
   res.send('ProxiSpeak backend is running!');
 });
 
-// Broadcast positions and calculate nearby users
 function broadcastPositions() {
-  const allPositions = Array.from(users.values());
+  const positions = Array.from(users.values());
 
-  io.emit('all-positions', allPositions);
+  io.emit('all-positions', positions);
 
   const nearbyPairs = [];
 
-  for (let i = 0; i < allPositions.length; i++) {
-    for (let j = i + 1; j < allPositions.length; j++) {
-      const a = allPositions[i];
-      const b = allPositions[j];
+  for (let i = 0; i < positions.length; i++) {
+    for (let j = i + 1; j < positions.length; j++) {
+      const a = positions[i];
+      const b = positions[j];
 
       const dx = a.x - b.x;
       const dy = a.y - b.y;
-      const distance = Math.sqrt(dx * dx + dy * dy);
+      const distance = Math.hypot(dx, dy);
 
       if (distance <= PROXIMITY_DISTANCE) {
         nearbyPairs.push({
@@ -63,7 +61,6 @@ io.on('connection', socket => {
 
   socket.emit('all-positions', Array.from(users.values()));
 
-  // Register browser identity
   socket.on('register-user', data => {
     const name =
       typeof data?.name === 'string'
@@ -85,7 +82,6 @@ io.on('connection', socket => {
     broadcastPositions();
   });
 
-  // Update the current user's position
   socket.on('avatar-move', data => {
     const existing = users.get(socket.id);
     if (!existing) return;
@@ -111,7 +107,6 @@ io.on('connection', socket => {
     broadcastPositions();
   });
 
-  // Forward WebRTC signaling messages to the target browser
   const signalingEvents = [
     'webrtc-offer',
     'webrtc-answer',
@@ -124,7 +119,11 @@ io.on('connection', socket => {
       if (data.target === socket.id) return;
 
       const targetSocket = io.sockets.sockets.get(data.target);
-      if (!targetSocket) return;
+
+      if (!targetSocket) {
+        console.log('Signaling target not connected:', data.target);
+        return;
+      }
 
       const payload = { ...data, from: socket.id };
       delete payload.target;
@@ -133,14 +132,10 @@ io.on('connection', socket => {
     });
   });
 
-  // Remove disconnected browser
   socket.on('disconnect', () => {
     const user = users.get(socket.id);
 
-    console.log(
-      'Disconnected:',
-      user?.name || socket.id
-    );
+    console.log('Disconnected:', user?.name || socket.id);
 
     users.delete(socket.id);
     broadcastPositions();

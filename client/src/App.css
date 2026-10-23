@@ -530,3 +530,181 @@ select:focus-visible {
     grid-row: 3;
   }
 }
+
+/* Virtual office furniture */
+.office-zone-label {
+  position: absolute;
+  top: 14px;
+  left: 16px;
+  z-index: 0;
+  color: #8996bd;
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: 2px;
+}
+
+.office-desk {
+  position: absolute;
+  z-index: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-direction: column;
+  gap: 5px;
+  width: 125px;
+  height: 65px;
+  border: 1px solid #52618a;
+  border-radius: 10px;
+  color: #c1cbea;
+  background: linear-gradient(145deg, #273653, #19243a);
+  box-shadow: 0 7px 15px #00000025;
+  font-size: 9px;
+  font-weight: 800;
+  letter-spacing: 1px;
+  pointer-events: none;
+}
+
+.desk-icon {
+  color: #8fa9e8;
+  font-size: 23px;
+}
+
+.desk-one {
+  left: 8%;
+  top: 18%;
+}
+
+.desk-two {
+  left: 8%;
+  bottom: 16%;
+}
+
+.desk-three {
+  right: 8%;
+  bottom: 16%;
+}
+
+.meeting-room {
+  position: absolute;
+  z-index: 0;
+  top: 14%;
+  right: 6%;
+  display: flex;
+  align-items: center;
+  flex-direction: column;
+  gap: 15px;
+  width: 185px;
+  height: 150px;
+  padding: 14px 10px;
+  border: 1px dashed #6476a1;
+  border-radius: 12px;
+  background: #17243b80;
+  pointer-events: none;
+}
+
+.meeting-room-title {
+  color: #a9b9e7;
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: 1px;
+}
+
+.meeting-table {
+  display: grid;
+  grid-template-columns: repeat(2, 15px);
+  gap: 8px 45px;
+  place-content: center;
+  width: 100px;
+  height: 75px;
+  border: 1px solid #667ca7;
+  border-radius: 18px;
+  background: #293958;
+}
+
+.meeting-table span {
+  width: 15px;
+  height: 15px;
+  border: 1px solid #8ba2d2;
+  border-radius: 5px;
+  background: #42577e;
+}
+
+/* Keep furniture compact on mobile */
+@media (max-width: 700px) {
+  .office-desk {
+    width: 82px;
+    height: 48px;
+    font-size: 8px;
+  }
+
+  .desk-icon {
+    font-size: 16px;
+  }
+
+  .desk-one {
+    left: 3%;
+    top: 15%;
+  }
+
+  .desk-two {
+    left: 3%;
+    bottom: 12%;
+  }
+
+  .desk-three {
+    right: 3%;
+    bottom: 12%;
+  }
+
+  .meeting-room {
+    top: 12%;
+    right: 2%;
+    width: 125px;
+    height: 115px;
+    padding: 10px 5px;
+    gap: 10px;
+  }
+
+  .meeting-room-title {
+    font-size: 8px;
+    letter-spacing: 0;
+  }
+
+  .meeting-table {
+    transform: scale(0.75);
+  }
+
+  .office-zone-label {
+    top: 6px;
+    left: 8px;
+    font-size: 8px;
+  }
+}
+/* Make team avatars and labels smaller */
+.avatar-card {
+  transform: scale(0.78);
+  transform-origin: center;
+}
+/* Keep desks behind avatars and prevent visual clashes */
+.office-desk {
+  z-index: 0;
+  pointer-events: none;
+}
+
+.avatar-card {
+  z-index: 2;
+}
+.desk-one {
+  left: 5%;
+  top: 12%;
+}
+
+.desk-two {
+  left: 5%;
+  bottom: 4%;
+}
+
+.desk-three {
+  right: 5%;
+  bottom: 4%;
+}
