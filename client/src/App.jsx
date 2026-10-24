@@ -2,7 +2,8 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { io } from 'socket.io-client';
 import './App.css';
 
-const SERVER_URL = 'http://localhost:5000';
+const SERVER_URL =
+  import.meta.env.VITE_SERVER_URL || 'http://localhost:5000';
 const PROXIMITY_DISTANCE = 32;
 
 const TEAM = [
