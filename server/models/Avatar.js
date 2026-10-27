@@ -45,6 +45,7 @@ const avatarSchema = new mongoose.Schema(
   { timestamps: true }
 );
 
-avatarSchema.index({ position: '2dsphere' });
+// Coordinates represent virtual-office units, not GPS coordinates.
+// Do not use MongoDB's 2dsphere distance calculations for these values.
 
 module.exports = mongoose.model('Avatar', avatarSchema);
