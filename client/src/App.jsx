@@ -1,10 +1,10 @@
+
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { io } from 'socket.io-client';
 import './App.css';
 
 const SERVER_URL =
   import.meta.env.VITE_SERVER_URL || 'http://localhost:5000';
-const PROXIMITY_DISTANCE = 32;
 
 const TEAM = [
   { id: 1, name: 'Irshad Ansari', role: 'Frontend Developer', x: 16, y: 25, color: '#8057f5' },
@@ -13,9 +13,8 @@ const TEAM = [
   { id: 4, name: 'Ankush pateel B V', role: 'Team Member', x: 78, y: 55, color: '#16a085' },
 ];
 
-function distanceBetween(a, b) {
-  return Math.hypot(a.x - b.x, a.y - b.y);
-}
+const clamp = (value, min, max) =>
+  Math.max(min, Math.min(max, value));
 
 export default function App() {
   const [selectedName, setSelectedName] = useState(TEAM[0].name);
@@ -23,7 +22,9 @@ export default function App() {
   const [micOn, setMicOn] = useState(false);
   const [positions, setPositions] = useState([]);
   const [nearbyIds, setNearbyIds] = useState([]);
-  const [notice, setNotice] = useState('Connect to the office to get started.');
+  const [notice, setNotice] = useState(
+    'Connect to the office to get started.'
+  );
   const [remoteStreams, setRemoteStreams] = useState([]);
   const [localOffsets, setLocalOffsets] = useState({});
 
@@ -92,46 +93,40 @@ export default function App() {
       if (!remoteStream) return;
 
       setRemoteStreams((current) => {
-        const filtered = current.filter((item) => item.id !== peerId);
-        return [...filtered, { id: peerId, stream: remoteStream }];
+        const filtered = current.filter(
+          (item) => item.id !== peerId
+        );
+
+        return [
+          ...filtered,
+          { id: peerId, stream: remoteStream },
+        ];
       });
-
-      const audio = audioRefs.current.get(peerId);
-
-      if (audio && audio.srcObject !== remoteStream) {
-        audio.srcObject = remoteStream;
-        audio.play().catch(() => {
-          setNotice('Audio blocked by browser. Check browser sound permissions.');
-        });
-      }
     };
 
     pc.onconnectionstatechange = () => {
       if (pc.connectionState === 'connected') {
-        setNotice('Voice connection established with a nearby teammate.');
+        setNotice(
+          'Voice connection established with a nearby teammate.'
+        );
       }
 
       if (pc.connectionState === 'connecting') {
-        setNotice('Nearby teammate found. Connecting voice...');
+        setNotice(
+          'Nearby teammate found. Connecting voice...'
+        );
       }
 
-      if (['failed', 'closed'].includes(pc.connectionState)) {
-        console.warn(
-          'Voice peer connection state:',
-          peerId,
-          pc.connectionState
+      if (pc.connectionState === 'failed') {
+        setNotice(
+          'Voice connection failed. Check both microphones and try again.'
         );
 
-        if (pc.connectionState === 'failed') {
-          setNotice('Voice connection failed. Check both microphones and try again.');
-        }
+        closePeer(peerId);
 
-        if (pc.connectionState === 'failed') {
-          closePeer(peerId);
-          setRemoteStreams((current) =>
-            current.filter((item) => item.id !== peerId)
-          );
-        }
+        setRemoteStreams((current) =>
+          current.filter((item) => item.id !== peerId)
+        );
       }
     };
 
@@ -142,10 +137,10 @@ export default function App() {
   const startOffer = useCallback(async (peerId) => {
     const socket = socketRef.current;
 
-    if (!socket || !socket.id || !micOnRef.current) return;
+    if (!socket?.id || !micOnRef.current) return;
     if (!nearbyRef.current.has(peerId)) return;
 
-    // One browser initiates to avoid both browsers creating offers together.
+    // Only one browser starts the offer.
     if (socket.id.localeCompare(peerId) >= 0) return;
 
     let pc = peersRef.current.get(peerId);
@@ -163,7 +158,9 @@ export default function App() {
       });
     } catch (error) {
       console.error('Could not create voice offer:', error);
-      setNotice('Could not start voice connection. Please try again.');
+      setNotice(
+        'Could not start voice connection. Please try again.'
+      );
     }
   }, [createPeer]);
 
@@ -176,19 +173,37 @@ export default function App() {
       setNotice('Connected to the ProxiSpeak server.');
 
       const member =
-        TEAM.find((item) => item.name === selectedRef.current) || TEAM[0];
+        TEAM.find(
+          (item) => item.name === selectedRef.current
+        ) || TEAM[0];
 
-      socket.emit('register-user', { name: member.name });
-      socket.emit('avatar-move', { x: member.x, y: member.y });
+      socket.emit('register-user', {
+        name: member.name,
+      });
+
+      socket.emit('avatar-move', {
+        x: member.x,
+        y: member.y,
+      });
     });
 
     socket.on('connect_error', (error) => {
-      console.error('Socket connection error:', error.message);
-      setNotice('Cannot connect to server. Check that backend is running on port 5000.');
+      console.error(
+        'Socket connection error:',
+        error.message
+      );
+
+      setNotice(
+        'Cannot connect to server. Check backend port 5000.'
+      );
     });
 
     socket.on('disconnect', () => {
       setConnected(false);
+
+      nearbyRef.current = new Set();
+      setNearbyIds([]);
+
       closeAllPeers();
       setRemoteStreams([]);
       setNotice('Server disconnected. Reconnecting...');
@@ -208,40 +223,63 @@ export default function App() {
       const nextNearby = new Set();
 
       for (const pair of Array.isArray(pairs) ? pairs : []) {
-        if (pair.userA === ownId) nextNearby.add(pair.userB);
-        if (pair.userB === ownId) nextNearby.add(pair.userA);
+        if (pair.userA === ownId) {
+          nextNearby.add(pair.userB);
+        }
+
+        if (pair.userB === ownId) {
+          nextNearby.add(pair.userA);
+        }
       }
 
       const previous = nearbyRef.current;
       nearbyRef.current = nextNearby;
-      setNearbyIds([...nextNearby]);
 
-      if (nextNearby.size > 0) {
-        setNotice(
-          micOnRef.current
-            ? 'Nearby teammate detected. Starting voice connection...'
-            : 'Nearby teammate detected. Turn on the microphone to test voice.'
-        );
-      }
+      setNearbyIds([...nextNearby]);
 
       for (const oldId of previous) {
         if (!nextNearby.has(oldId)) {
           closePeer(oldId);
+
           setRemoteStreams((current) =>
             current.filter((item) => item.id !== oldId)
           );
         }
       }
 
+      if (nextNearby.size === 0) {
+        setNotice(
+          micOnRef.current
+            ? 'No teammate nearby. Move closer to connect voice.'
+            : 'No teammate nearby.'
+        );
+      } else {
+        setNotice(
+          micOnRef.current
+            ? 'Nearby teammate detected. Connecting voice...'
+            : 'Nearby teammate detected. Enable microphone.'
+        );
+      }
+
       for (const peerId of nextNearby) {
-        if (!previous.has(peerId) && micOnRef.current) {
+        if (
+          !previous.has(peerId) &&
+          micOnRef.current
+        ) {
           void startOffer(peerId);
         }
       }
     });
 
     socket.on('webrtc-offer', async ({ from, offer }) => {
-      if (!from || !offer || !nearbyRef.current.has(from)) return;
+      if (
+        !from ||
+        !offer ||
+        !nearbyRef.current.has(from) ||
+        !micOnRef.current
+      ) {
+        return;
+      }
 
       try {
         let pc = peersRef.current.get(from);
@@ -251,11 +289,14 @@ export default function App() {
           pc = null;
         }
 
-        if (!pc) pc = createPeer(from);
+        if (!pc) {
+          pc = createPeer(from);
+        }
 
         await pc.setRemoteDescription(offer);
 
-        const queued = pendingIceRef.current.get(from) || [];
+        const queued =
+          pendingIceRef.current.get(from) || [];
 
         for (const candidate of queued) {
           await pc.addIceCandidate(candidate);
@@ -271,19 +312,27 @@ export default function App() {
           answer: pc.localDescription,
         });
       } catch (error) {
-        console.error('Could not answer voice offer:', error);
-        setNotice('Could not answer voice connection. Try turning the mic off and on.');
+        console.error(
+          'Could not answer voice offer:',
+          error
+        );
+
+        setNotice(
+          'Could not answer voice connection. Try again.'
+        );
       }
     });
 
     socket.on('webrtc-answer', async ({ from, answer }) => {
       const pc = peersRef.current.get(from);
+
       if (!pc || !answer) return;
 
       try {
         await pc.setRemoteDescription(answer);
 
-        const queued = pendingIceRef.current.get(from) || [];
+        const queued =
+          pendingIceRef.current.get(from) || [];
 
         for (const candidate of queued) {
           await pc.addIceCandidate(candidate);
@@ -291,54 +340,91 @@ export default function App() {
 
         pendingIceRef.current.delete(from);
       } catch (error) {
-        console.error('Could not apply voice answer:', error);
+        console.error(
+          'Could not apply voice answer:',
+          error
+        );
       }
     });
 
-    socket.on('webrtc-ice-candidate', async ({ from, candidate }) => {
-      if (!from || !candidate) return;
+    socket.on(
+      'webrtc-ice-candidate',
+      async ({ from, candidate }) => {
+        if (!from || !candidate) return;
 
-      const pc = peersRef.current.get(from);
+        const pc = peersRef.current.get(from);
 
-      if (pc?.remoteDescription) {
-        try {
-          await pc.addIceCandidate(candidate);
-        } catch (error) {
-          console.warn('ICE candidate could not be added:', error);
+        if (pc?.remoteDescription) {
+          try {
+            await pc.addIceCandidate(candidate);
+          } catch (error) {
+            console.warn(
+              'ICE candidate could not be added:',
+              error
+            );
+          }
+        } else {
+          const queued =
+            pendingIceRef.current.get(from) || [];
+
+          queued.push(candidate);
+          pendingIceRef.current.set(from, queued);
         }
-      } else {
-        const queued = pendingIceRef.current.get(from) || [];
-        queued.push(candidate);
-        pendingIceRef.current.set(from, queued);
       }
-    });
+    );
 
     return () => {
       socket.removeAllListeners();
       socket.disconnect();
+
       closeAllPeers();
 
       if (streamRef.current) {
-        streamRef.current.getTracks().forEach((track) => track.stop());
+        streamRef.current
+          .getTracks()
+          .forEach((track) => track.stop());
+
         streamRef.current = null;
       }
 
       micOnRef.current = false;
       socketRef.current = null;
     };
-  }, [closeAllPeers, closePeer, createPeer, startOffer]);
+  }, [
+    closeAllPeers,
+    closePeer,
+    createPeer,
+    startOffer,
+  ]);
 
   useEffect(() => {
     if (!connected || !socketRef.current) return;
 
-    const member = TEAM.find((item) => item.name === selectedName) || TEAM[0];
+    const member =
+      TEAM.find((item) => item.name === selectedName) ||
+      TEAM[0];
 
-    socketRef.current.emit('register-user', { name: member.name });
-    socketRef.current.emit('avatar-move', { x: member.x, y: member.y });
+    const socket = socketRef.current;
+
+    socket.emit('register-user', {
+      name: member.name,
+    });
+
+    socket.emit('avatar-move', {
+      x: member.x,
+      y: member.y,
+    });
 
     closeAllPeers();
     setRemoteStreams([]);
-  }, [selectedName, connected, closeAllPeers]);
+
+    // Clear old local position when switching identity.
+    setLocalOffsets({});
+  }, [
+    selectedName,
+    connected,
+    closeAllPeers,
+  ]);
 
   const toggleMicrophone = async () => {
     if (micOnRef.current) {
@@ -346,7 +432,10 @@ export default function App() {
       setMicOn(false);
 
       if (streamRef.current) {
-        streamRef.current.getTracks().forEach((track) => track.stop());
+        streamRef.current
+          .getTracks()
+          .forEach((track) => track.stop());
+
         streamRef.current = null;
       }
 
@@ -357,106 +446,99 @@ export default function App() {
     }
 
     try {
-      const stream = await navigator.mediaDevices.getUserMedia({
-        audio: true,
-      });
+      const stream =
+        await navigator.mediaDevices.getUserMedia({
+          audio: true,
+        });
 
       streamRef.current = stream;
       micOnRef.current = true;
       setMicOn(true);
 
       setNotice(
-        'Microphone is on. Move close to a teammate to test voice chat.'
+        'Microphone is on. Move close to a teammate.'
       );
 
       for (const peerId of nearbyRef.current) {
         void startOffer(peerId);
       }
     } catch (error) {
-      console.error('Microphone permission failed:', error);
+      console.error(
+        'Microphone permission failed:',
+        error
+      );
 
       setNotice(
-        'Microphone permission denied or unavailable. Allow microphone access in your browser.'
+        'Microphone permission denied. Allow microphone access.'
       );
     }
   };
 
-  const moveAvatar = (member) => {
-    if (member.name !== selectedName) {
-      setNotice('Select your identity first, then click your own avatar to move.');
+  // FIX: Click anywhere on the floor to move only your avatar.
+  const moveAvatar = (event) => {
+    if (!connected || !socketRef.current?.id) {
+      setNotice('Connect to the office before moving.');
       return;
     }
 
-    const socketId = socketRef.current?.id;
+    const rect =
+      event.currentTarget.getBoundingClientRect();
 
-    const currentPosition =
-      positionsRef.current.find((item) => item.id === socketId) ||
-      positions.find((item) => item.name === selectedName) ||
-      member;
-
-    const otherUsers = positionsRef.current.filter(
-      (item) => item.id !== socketId
+    const x = clamp(
+      ((event.clientX - rect.left) / rect.width) * 100,
+      2,
+      98
     );
 
-    let nextX;
-    let nextY;
-
-    if (otherUsers.length > 0) {
-      const target = otherUsers.reduce((nearest, candidate) =>
-        distanceBetween(currentPosition, candidate) <
-        distanceBetween(currentPosition, nearest)
-          ? candidate
-          : nearest
-      );
-
-      const dx = target.x - currentPosition.x;
-      const dy = target.y - currentPosition.y;
-      const distance = Math.hypot(dx, dy);
-      const step = Math.min(10, distance);
-
-      if (distance > 0) {
-        nextX = currentPosition.x + (dx / distance) * step;
-        nextY = currentPosition.y + (dy / distance) * step;
-      } else {
-        nextX = currentPosition.x;
-        nextY = currentPosition.y;
-      }
-    } else {
-      nextX = currentPosition.x + (Math.random() * 10 - 5);
-      nextY = currentPosition.y + (Math.random() * 10 - 5);
-    }
-
-    const updated = {
-      ...member,
-      x: Math.max(2, Math.min(98, nextX)),
-      y: Math.max(5, Math.min(90, nextY)),
-    };
-
-    positionsRef.current = positionsRef.current.map((item) =>
-      item.id === socketId ? { ...item, x: updated.x, y: updated.y } : item
+    const y = clamp(
+      ((event.clientY - rect.top) / rect.height) * 100,
+      5,
+      90
     );
 
-    socketRef.current?.emit('avatar-move', {
-      x: updated.x,
-      y: updated.y,
-    });
+    const socketId = socketRef.current.id;
+
+    positionsRef.current = positionsRef.current.map(
+      (item) =>
+        item.id === socketId
+          ? { ...item, x, y }
+          : item
+    );
+
+    setPositions([...positionsRef.current]);
 
     setLocalOffsets((current) => ({
       ...current,
-      [member.name]: { x: updated.x, y: updated.y },
+      [selectedRef.current]: { x, y },
     }));
 
+    socketRef.current.emit('avatar-move', {
+      x,
+      y,
+    });
+
     setNotice(
-      otherUsers.length > 0
-        ? 'Moving toward the nearest connected browser. Click your avatar again if needed.'
-        : 'No second browser connected yet. Open another browser and enable its microphone.'
+      `Avatar moved to ${Math.round(x)}, ${Math.round(y)}.`
     );
   };
 
-  const displayedMembers = TEAM.map((member) => ({
-    ...member,
-    ...(localOffsets[member.name] || {}),
-  }));
+  // FIX: Use live Socket.IO positions for connected members.
+  const displayedMembers = TEAM.map((member) => {
+    const onlineUser = positions.find(
+      (item) => item.name === member.name
+    );
+
+    return {
+      ...member,
+      ...(localOffsets[member.name] || {}),
+      ...(onlineUser
+        ? {
+            x: onlineUser.x,
+            y: onlineUser.y,
+          }
+        : {}),
+    };
+  });
 
   const ownPosition = positions.find(
     (item) => item.id === socketRef.current?.id
@@ -471,6 +553,7 @@ export default function App() {
       <header className="topbar">
         <div className="brand">
           <div className="brand-mark">P</div>
+
           <div>
             <h1>ProxiSpeak</h1>
             <p>Geospatial Proximity Audio</p>
@@ -479,8 +562,13 @@ export default function App() {
 
         <div className="server-status">
           <span
-            className={connected ? 'status-dot online' : 'status-dot'}
+            className={
+              connected
+                ? 'status-dot online'
+                : 'status-dot'
+            }
           />
+
           {connected ? 'Office online' : 'Connecting...'}
         </div>
       </header>
@@ -492,11 +580,17 @@ export default function App() {
         </div>
 
         <button
-          className={micOn ? 'mic-button active' : 'mic-button'}
+          className={
+            micOn
+              ? 'mic-button active'
+              : 'mic-button'
+          }
           onClick={toggleMicrophone}
           disabled={!connected}
         >
-          {micOn ? '🎙️ Turn microphone off' : '🎙️ Enable microphone'}
+          {micOn
+            ? '🎙️ Turn microphone off'
+            : '🎙️ Enable microphone'}
         </button>
       </section>
 
@@ -504,17 +598,26 @@ export default function App() {
         <div className="workspace-heading">
           <div>
             <h2>Virtual Office</h2>
-            <p>Choose your identity, then move near a teammate.</p>
+            <p>
+              Choose your identity, then click an empty
+              office area to move your avatar.
+            </p>
           </div>
 
           <label className="identity-picker">
             Your identity
+
             <select
               value={selectedName}
-              onChange={(event) => setSelectedName(event.target.value)}
+              onChange={(event) =>
+                setSelectedName(event.target.value)
+              }
             >
               {TEAM.map((member) => (
-                <option key={member.id} value={member.name}>
+                <option
+                  key={member.id}
+                  value={member.name}
+                >
                   {member.name}
                 </option>
               ))}
@@ -522,10 +625,19 @@ export default function App() {
           </label>
         </div>
 
-        <div className="office-floor">
-          <div className="floor-grid" />
+        <div
+          className="office-floor"
+          onClick={moveAvatar}
+          style={{ cursor: 'crosshair' }}
+        >
+          <div
+            className="floor-grid"
+            style={{ pointerEvents: 'none' }}
+          />
 
-          <div className="office-zone-label">VIRTUAL OFFICE</div>
+          <div className="office-zone-label">
+            VIRTUAL OFFICE
+          </div>
 
           <div className="office-desk desk-one">
             <span className="desk-icon">▤</span>
@@ -543,7 +655,10 @@ export default function App() {
           </div>
 
           <div className="meeting-room">
-            <div className="meeting-room-title">MEETING ROOM</div>
+            <div className="meeting-room-title">
+              MEETING ROOM
+            </div>
+
             <div className="meeting-table">
               <span />
               <span />
@@ -553,30 +668,46 @@ export default function App() {
           </div>
 
           {displayedMembers.map((member) => {
-            const isYou = member.name === selectedName;
+            const isYou =
+              member.name === selectedName;
 
             const online = positions.some(
-              (item) => item.name === member.name
+              (item) =>
+                item.name === member.name
             );
 
             const nearby = nearbyNames.some(
-              (item) => item.name === member.name
+              (item) =>
+                item.name === member.name
             );
 
             return (
               <button
                 key={member.id}
-                className={`avatar-card ${isYou ? 'selected' : ''} ${nearby ? 'nearby' : ''}`}
+                type="button"
+                className={`avatar-card ${
+                  isYou ? 'selected' : ''
+                } ${
+                  nearby ? 'nearby' : ''
+                }`}
                 style={{
                   left: `${member.x}%`,
                   top: `${member.y}%`,
                   '--avatar-color': member.color,
                 }}
-                onClick={() => moveAvatar(member)}
+                onClick={(event) => {
+                  event.stopPropagation();
+
+                  setNotice(
+                    isYou
+                      ? 'Click an empty area to move your avatar.'
+                      : 'Only your own avatar can be moved.'
+                  );
+                }}
                 title={
                   isYou
-                    ? 'Click to move your avatar'
-                    : 'Demo avatar; select this identity to connect as this teammate'
+                    ? 'Click empty floor to move'
+                    : 'Teammate avatar'
                 }
               >
                 <span className="avatar-circle">
@@ -588,17 +719,25 @@ export default function App() {
                 </span>
 
                 <span className="avatar-name">
-                  {isYou ? 'You' : member.name}
+                  {isYou
+                    ? 'You'
+                    : member.name}
                 </span>
 
-                <span className="avatar-role">{member.role}</span>
+                <span className="avatar-role">
+                  {member.role}
+                </span>
 
                 {nearby && (
-                  <span className="nearby-badge">🎙 Nearby</span>
+                  <span className="nearby-badge">
+                    🎙 Nearby
+                  </span>
                 )}
 
                 {!isYou && online && (
-                  <span className="online-badge">Online</span>
+                  <span className="online-badge">
+                    Online
+                  </span>
                 )}
               </button>
             );
@@ -606,7 +745,9 @@ export default function App() {
 
           <div className="floor-caption">
             {ownPosition
-              ? `Your position: ${Math.round(ownPosition.x)}, ${Math.round(ownPosition.y)}`
+              ? `Your position: ${Math.round(
+                  ownPosition.x
+                )}, ${Math.round(ownPosition.y)}`
               : 'Your position will appear when connected'}
           </div>
         </div>
@@ -614,25 +755,37 @@ export default function App() {
 
       <section className="team-panel">
         <div className="team-panel-heading">
-          <h2>Your Team · {TEAM.length} Members</h2>
-          <span>{positions.length} browser connection(s)</span>
+          <h2>
+            Your Team · {TEAM.length} Members
+          </h2>
+
+          <span>
+            {positions.length} browser connection(s)
+          </span>
         </div>
 
         <div className="team-list">
           {TEAM.map((member) => {
             const online = positions.some(
-              (item) => item.name === member.name
+              (item) =>
+                item.name === member.name
             );
 
             const nearby = nearbyNames.some(
-              (item) => item.name === member.name
+              (item) =>
+                item.name === member.name
             );
 
             return (
-              <div className="team-row" key={member.id}>
+              <div
+                className="team-row"
+                key={member.id}
+              >
                 <span
                   className="team-initial"
-                  style={{ background: member.color }}
+                  style={{
+                    background: member.color,
+                  }}
                 >
                   {member.name
                     .split(' ')
@@ -642,12 +795,25 @@ export default function App() {
                 </span>
 
                 <div className="team-info">
-                  <strong>{member.name}</strong>
-                  <small>{member.role}</small>
+                  <strong>
+                    {member.name}
+                  </strong>
+
+                  <small>
+                    {member.role}
+                  </small>
                 </div>
 
-                <span className={`team-status ${online ? 'is-online' : ''}`}>
-                  {nearby ? 'Nearby' : online ? 'Online' : 'Demo'}
+                <span
+                  className={`team-status ${
+                    online ? 'is-online' : ''
+                  }`}
+                >
+                  {nearby
+                    ? 'Nearby'
+                    : online
+                    ? 'Online'
+                    : 'Demo'}
                 </span>
               </div>
             );
@@ -655,7 +821,10 @@ export default function App() {
         </div>
       </section>
 
-      <div className="audio-elements" aria-hidden="true">
+      <div
+        className="audio-elements"
+        aria-hidden="true"
+      >
         {remoteStreams.map(({ id, stream }) => (
           <audio
             key={id}
@@ -665,11 +834,17 @@ export default function App() {
               if (element) {
                 audioRefs.current.set(id, element);
 
-                if (element.srcObject !== stream) {
+                if (
+                  element.srcObject !== stream
+                ) {
                   element.srcObject = stream;
                 }
 
-                element.play().catch(() => {});
+                element.play().catch(() => {
+                  setNotice(
+                    'Audio playback blocked. Check browser sound permissions.'
+                  );
+                });
               } else {
                 audioRefs.current.delete(id);
               }
