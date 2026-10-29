@@ -7,10 +7,38 @@ const SERVER_URL =
   import.meta.env.VITE_SERVER_URL || 'http://localhost:5000';
 
 const TEAM = [
-  { id: 1, name: 'Irshad Ansari', role: 'Frontend Developer', x: 16, y: 25, color: '#8057f5' },
-  { id: 2, name: 'Mohd Aman Choudhary', role: 'Team Member', x: 38, y: 45, color: '#08a5e8' },
-  { id: 3, name: 'Akshaya Rajendran', role: 'Team Member', x: 62, y: 25, color: '#f59e0b' },
-  { id: 4, name: 'Ankush pateel B V', role: 'Team Member', x: 78, y: 55, color: '#16a085' },
+  {
+    id: 1,
+    name: 'Irshad Ansari',
+    role: 'Frontend Developer',
+    x: 16,
+    y: 25,
+    color: '#8057f5',
+  },
+  {
+    id: 2,
+    name: 'Mohd Aman Choudhary',
+    role: 'Team Member',
+    x: 38,
+    y: 45,
+    color: '#08a5e8',
+  },
+  {
+    id: 3,
+    name: 'Akshaya Rajendran',
+    role: 'Team Member',
+    x: 62,
+    y: 25,
+    color: '#f59e0b',
+  },
+  {
+    id: 4,
+    name: 'Ankush pateel B V',
+    role: 'Team Member',
+    x: 78,
+    y: 55,
+    color: '#16a085',
+  },
 ];
 
 const clamp = (value, min, max) =>
@@ -140,7 +168,7 @@ export default function App() {
     if (!socket?.id || !micOnRef.current) return;
     if (!nearbyRef.current.has(peerId)) return;
 
-    // Only one browser starts the offer.
+    // Only one browser initiates a voice offer.
     if (socket.id.localeCompare(peerId) >= 0) return;
 
     let pc = peersRef.current.get(peerId);
@@ -418,7 +446,6 @@ export default function App() {
     closeAllPeers();
     setRemoteStreams([]);
 
-    // Clear old local position when switching identity.
     setLocalOffsets({});
   }, [
     selectedName,
@@ -474,34 +501,23 @@ export default function App() {
     }
   };
 
-  // FIX: Click anywhere on the floor to move only your avatar.
-  const moveAvatar = (event) => {
-    if (!connected || !socketRef.current?.id) {
+  // Synchronize only the current browser's avatar.
+  const updateOwnPosition = (x, y) => {
+    const socket = socketRef.current;
+
+    if (!connected || !socket?.connected || !socket.id) {
       setNotice('Connect to the office before moving.');
-      return;
+      return false;
     }
 
-    const rect =
-      event.currentTarget.getBoundingClientRect();
-
-    const x = clamp(
-      ((event.clientX - rect.left) / rect.width) * 100,
-      2,
-      98
-    );
-
-    const y = clamp(
-      ((event.clientY - rect.top) / rect.height) * 100,
-      5,
-      90
-    );
-
-    const socketId = socketRef.current.id;
+    const nextX = clamp(x, 2, 98);
+    const nextY = clamp(y, 5, 90);
+    const socketId = socket.id;
 
     positionsRef.current = positionsRef.current.map(
       (item) =>
         item.id === socketId
-          ? { ...item, x, y }
+          ? { ...item, x: nextX, y: nextY }
           : item
     );
 
@@ -509,20 +525,51 @@ export default function App() {
 
     setLocalOffsets((current) => ({
       ...current,
-      [selectedRef.current]: { x, y },
+      [selectedRef.current]: {
+        x: nextX,
+        y: nextY,
+      },
     }));
 
-    socketRef.current.emit('avatar-move', {
-      x,
-      y,
+    socket.emit('avatar-move', {
+      x: nextX,
+      y: nextY,
     });
 
-    setNotice(
-      `Avatar moved to ${Math.round(x)}, ${Math.round(y)}.`
-    );
+    return true;
   };
 
-  // FIX: Use live Socket.IO positions for connected members.
+  const moveAvatar = (event) => {
+    const rect =
+      event.currentTarget.getBoundingClientRect();
+
+    const x =
+      ((event.clientX - rect.left) / rect.width) * 100;
+
+    const y =
+      ((event.clientY - rect.top) / rect.height) * 100;
+
+    if (updateOwnPosition(x, y)) {
+      setNotice(
+        `Avatar moved to ${Math.round(clamp(x, 2, 98))}, ${Math.round(clamp(y, 5, 90))}.`
+      );
+    }
+  };
+
+  const resetAvatarPosition = () => {
+    const member = TEAM.find(
+      (item) => item.name === selectedRef.current
+    );
+
+    if (!member) return;
+
+    if (updateOwnPosition(member.x, member.y)) {
+      setNotice(
+        `${member.name}'s avatar returned to its default position.`
+      );
+    }
+  };
+
   const displayedMembers = TEAM.map((member) => {
     const onlineUser = positions.find(
       (item) => item.name === member.name
@@ -628,7 +675,10 @@ export default function App() {
         <div
           className="office-floor"
           onClick={moveAvatar}
-          style={{ cursor: 'crosshair' }}
+          style={{
+            cursor: 'crosshair',
+            position: 'relative',
+          }}
         >
           <div
             className="floor-grid"
@@ -742,6 +792,40 @@ export default function App() {
               </button>
             );
           })}
+
+          {/* Reset button stays inside the office corner. */}
+          <button
+            type="button"
+            onClick={(event) => {
+              event.stopPropagation();
+              resetAvatarPosition();
+            }}
+            disabled={!connected}
+            title="Return your avatar to its default position"
+            style={{
+              position: 'absolute',
+              right: '10px',
+              bottom: '8px',
+              zIndex: 20,
+              width: 'auto',
+              minWidth: 'unset',
+              height: 'auto',
+              padding: '5px 9px',
+              fontSize: '12px',
+              fontWeight: 500,
+              lineHeight: '1.25',
+              whiteSpace: 'nowrap',
+              borderRadius: '7px',
+              border: '1px solid #40516f',
+              background: '#17243b',
+              color: '#ffffff',
+              cursor: connected ? 'pointer' : 'not-allowed',
+              opacity: connected ? 1 : 0.5,
+              boxShadow: '0 2px 8px rgba(0,0,0,0.2)',
+            }}
+          >
+            ↺ Reset
+          </button>
 
           <div className="floor-caption">
             {ownPosition
