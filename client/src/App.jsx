@@ -1,4 +1,3 @@
-
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { io } from 'socket.io-client';
 import './App.css';
@@ -903,7 +902,7 @@ export default function App() {
 
                   setNotice(
                     isYou
-                      ? 'Click an empty area to move your avatar.'
+                      ? 'Click an empty floor area to move your avatar.'
                       : 'Only your own avatar can be moved.'
                   );
                 }}
@@ -935,11 +934,13 @@ export default function App() {
                   </span>
                 )}
 
-                {!isYou && online && (
-                  <span className="online-badge">
-                    Online
-                  </span>
-                )}
+                <span
+                  className={`online-badge ${
+                    online ? 'is-online' : 'is-offline'
+                  }`}
+                >
+                  {online ? 'Online' : 'Offline'}
+                </span>
               </button>
             );
           })}
@@ -1034,14 +1035,14 @@ export default function App() {
 
                 <span
                   className={`team-status ${
-                    online ? 'is-online' : ''
-                  }`}
+                    online ? 'is-online' : 'is-offline'
+                  } ${nearby ? 'is-nearby' : ''}`}
                 >
                   {nearby
                     ? 'Nearby'
                     : online
                       ? 'Online'
-                      : 'Demo'}
+                      : 'Offline'}
                 </span>
               </div>
             );
