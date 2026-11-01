@@ -708,3 +708,27 @@ select:focus-visible {
   right: 5%;
   bottom: 4%;
 }
+/* Online team member */
+.online-badge {
+  color: #86efac;
+  background: #14532d;
+  border: 1px solid #22c55e;
+}
+
+/* Offline team member */
+.online-badge.is-offline {
+  color: #cbd5e1;
+  background: #334155;
+  border: 1px solid #64748b;
+}
+
+/* Offline status in team panel */
+.team-status.is-offline {
+  color: #94a3b8;
+}
+
+/* Nearby team member */
+.team-status.is-nearby {
+  color: #6ee7b7;
+  font-weight: 700;
+}
