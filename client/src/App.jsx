@@ -515,32 +515,6 @@ export default function App() {
     closeAllPeers,
     refreshVoiceStatus,
   ]);
-  
-  // Retry voice connections when a nearby peer has been closed.
-  useEffect(() => {
-    if (!connected) return;
-
-    const retryTimer = setInterval(() => {
-      if (
-        !socketRef.current?.connected ||
-        !micOnRef.current
-      ) {
-        return;
-      }
-
-      for (const peerId of nearbyRef.current) {
-        // Only start a new offer when no peer exists.
-        // This avoids repeatedly creating offers for the same peer.
-        if (!peersRef.current.has(peerId)) {
-          void startOffer(peerId);
-        }
-      }
-    }, 3000);
-
-    return () => clearInterval(retryTimer);
-  }, [connected, startOffer]);
-
-
 
   const toggleMicrophone = async () => {
     if (micOnRef.current) {
