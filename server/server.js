@@ -50,6 +50,21 @@ async function connectDatabase() {
 app.get('/', (req, res) => {
   res.send('ProxiSpeak backend is running!');
 });
+// Backend health check API
+app.get('/api/health', (req, res) => {
+  const databaseConnected =
+    mongoose.connection.readyState === 1;
+
+  res.status(200).json({
+    success: true,
+    message: 'ProxiSpeak backend is healthy',
+    server: 'running',
+    database: databaseConnected ? 'connected' : 'disconnected',
+    activeUsers: users.size,
+    uptime: Math.floor(process.uptime()),
+    timestamp: new Date().toISOString(),
+  });
+});
 
 function calculateNearbyPairs(positions) {
   const nearbyPairs = [];
