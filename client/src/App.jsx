@@ -1,3 +1,4 @@
+
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { io } from 'socket.io-client';
 import './App.css';
@@ -57,6 +58,14 @@ export default function App() {
   const [activeVoiceCount, setActiveVoiceCount] = useState(0);
   const [localOffsets, setLocalOffsets] = useState({});
 
+  // Backend and MongoDB health monitor
+  const [serverHealth, setServerHealth] = useState({
+    status: 'checking',
+    database: 'checking',
+    activeUsers: 0,
+    lastChecked: null,
+  });
+
   const socketRef = useRef(null);
   const streamRef = useRef(null);
   const peersRef = useRef(new Map());
@@ -70,6 +79,57 @@ export default function App() {
   useEffect(() => {
     selectedRef.current = selectedName;
   }, [selectedName]);
+
+  // Monitor backend and MongoDB every 15 seconds.
+  useEffect(() => {
+    let isMounted = true;
+
+    const checkServerHealth = async () => {
+      try {
+        const response = await fetch(`${SERVER_URL}/api/health`, {
+          cache: 'no-store',
+        });
+
+        if (!response.ok) {
+          throw new Error('Health check request failed');
+        }
+
+        const data = await response.json();
+
+        if (!isMounted) return;
+
+        setServerHealth({
+          status: 'online',
+          database: data.database || 'unknown',
+          activeUsers: Number(data.activeUsers) || 0,
+          lastChecked: new Date().toLocaleTimeString(),
+        });
+      } catch (error) {
+        if (!isMounted) return;
+
+        setServerHealth({
+          status: 'offline',
+          database: 'unknown',
+          activeUsers: 0,
+          lastChecked: new Date().toLocaleTimeString(),
+        });
+
+        console.error('Health check failed:', error.message);
+      }
+    };
+
+    checkServerHealth();
+
+    const healthInterval = setInterval(
+      checkServerHealth,
+      15000
+    );
+
+    return () => {
+      isMounted = false;
+      clearInterval(healthInterval);
+    };
+  }, []);
 
   // Calculate overall voice status across all peers.
   const refreshVoiceStatus = useCallback(() => {
@@ -680,6 +740,20 @@ export default function App() {
         ? '#f59e0b'
         : '#64748b';
 
+  const healthStatusColor =
+    serverHealth.status === 'online'
+      ? '#22c55e'
+      : serverHealth.status === 'offline'
+        ? '#ef4444'
+        : '#f59e0b';
+
+  const databaseStatusColor =
+    serverHealth.database === 'connected'
+      ? '#22c55e'
+      : serverHealth.database === 'disconnected'
+        ? '#ef4444'
+        : '#f59e0b';
+
   return (
     <main className="app-shell">
       <header className="topbar">
@@ -704,6 +778,54 @@ export default function App() {
           {connected ? 'Office online' : 'Connecting...'}
         </div>
       </header>
+
+      {/* Backend and database health monitor */}
+      <section
+        style={{
+          display: 'flex',
+          flexWrap: 'wrap',
+          gap: '12px',
+          padding: '14px 20px',
+          margin: '12px 0',
+          background: '#111c32',
+          border: '1px solid #293b59',
+          borderRadius: '12px',
+          color: '#ffffff',
+          alignItems: 'center',
+        }}
+      >
+        <strong>System Health</strong>
+
+        <span>
+          🖥️ Backend:{' '}
+          <span style={{ color: healthStatusColor, fontWeight: 700 }}>
+            {serverHealth.status === 'online'
+              ? 'Online'
+              : serverHealth.status === 'offline'
+                ? 'Offline'
+                : 'Checking...'}
+          </span>
+        </span>
+
+        <span>
+          🗄️ MongoDB:{' '}
+          <span style={{ color: databaseStatusColor, fontWeight: 700 }}>
+            {serverHealth.database === 'connected'
+              ? 'Connected'
+              : serverHealth.database === 'disconnected'
+                ? 'Disconnected'
+                : 'Checking...'}
+          </span>
+        </span>
+
+        <span>
+          👥 Active users: {serverHealth.activeUsers}
+        </span>
+
+        <span style={{ fontSize: '12px', color: '#aab8cc' }}>
+          Last check: {serverHealth.lastChecked || 'Waiting...'}
+        </span>
+      </section>
 
       <section className="voice-panel">
         <div>
