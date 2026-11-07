@@ -1,4 +1,3 @@
-
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { io } from 'socket.io-client';
 import './App.css';
@@ -66,6 +65,9 @@ export default function App() {
     lastChecked: null,
   });
 
+  const [healthRefreshing, setHealthRefreshing] = useState(false);
+  const [healthRefreshKey, setHealthRefreshKey] = useState(0);
+
   const socketRef = useRef(null);
   const streamRef = useRef(null);
   const peersRef = useRef(new Map());
@@ -85,6 +87,8 @@ export default function App() {
     let isMounted = true;
 
     const checkServerHealth = async () => {
+      setHealthRefreshing(true);
+
       try {
         const response = await fetch(`${SERVER_URL}/api/health`, {
           cache: 'no-store',
@@ -115,6 +119,10 @@ export default function App() {
         });
 
         console.error('Health check failed:', error.message);
+      } finally {
+        if (isMounted) {
+          setHealthRefreshing(false);
+        }
       }
     };
 
@@ -129,7 +137,7 @@ export default function App() {
       isMounted = false;
       clearInterval(healthInterval);
     };
-  }, []);
+  }, [healthRefreshKey]);
 
   // Calculate overall voice status across all peers.
   const refreshVoiceStatus = useCallback(() => {
@@ -825,6 +833,24 @@ export default function App() {
         <span style={{ fontSize: '12px', color: '#aab8cc' }}>
           Last check: {serverHealth.lastChecked || 'Waiting...'}
         </span>
+
+        <button
+          type="button"
+          onClick={() => setHealthRefreshKey((value) => value + 1)}
+          disabled={healthRefreshing}
+          style={{
+            padding: '8px 14px',
+            borderRadius: '8px',
+            border: '1px solid #526987',
+            background: '#243752',
+            color: '#ffffff',
+            cursor: healthRefreshing ? 'wait' : 'pointer',
+            opacity: healthRefreshing ? 0.6 : 1,
+            fontWeight: 600,
+          }}
+        >
+          {healthRefreshing ? 'Refreshing...' : 'Refresh Status'}
+        </button>
       </section>
 
       <section className="voice-panel">
